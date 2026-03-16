@@ -94,12 +94,12 @@ function togglePrefixManual() {
     document.getElementById('mapPrefix').value ? 'none' : 'flex';
 }
 
-// Enable save button
-['mapNumber', 'mapPrefix', 'mapFirstName', 'mapLastName', 'mapOther1', 'mapOther2'].forEach(id => {
-  document.getElementById(id).addEventListener('change', updateSaveBtn);
-});
+// Enable save button - ONLY requires Number column
+document.getElementById('mapNumber').addEventListener('change', updateSaveBtn);
+document.getElementById('mapNumber').addEventListener('input', updateSaveBtn);
 function updateSaveBtn() {
-  document.getElementById('btnSaveContacts').disabled = document.getElementById('mapNumber').value === '';
+  const hasNumber = document.getElementById('mapNumber').value !== '';
+  document.getElementById('btnSaveContacts').disabled = !hasNumber;
 }
 
 // Save contacts
