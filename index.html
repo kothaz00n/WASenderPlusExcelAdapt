@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Excel → WASender Adapter</title>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #0f0f0f; color: #e0e0e0; min-height: 100vh; }
+
+    .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+
+    h1 { text-align: center; margin-bottom: 8px; font-size: 1.6rem; color: #25d366; }
+    .subtitle { text-align: center; color: #888; margin-bottom: 32px; font-size: 0.9rem; }
+
+    /* Upload area */
+    .upload-area {
+      border: 2px dashed #333;
+      border-radius: 12px;
+      padding: 48px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: #1a1a1a;
+    }
+    .upload-area:hover, .upload-area.dragover {
+      border-color: #25d366;
+      background: #1a2e1f;
+    }
+    .upload-area svg { margin-bottom: 12px; }
+    .upload-area p { color: #aaa; font-size: 0.95rem; }
+    .upload-area .filename { color: #25d366; font-weight: 600; margin-top: 8px; }
+    #fileInput { display: none; }
+
+    /* Steps */
+    .step { display: none; margin-top: 32px; }
+    .step.active { display: block; }
+    .step-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 16px; color: #fff; }
+
+    /* Data preview table */
+    .table-wrap {
+      overflow-x: auto;
+      border-radius: 8px;
+      border: 1px solid #2a2a2a;
+      max-height: 350px;
+      overflow-y: auto;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    thead th {
+      background: #1e1e1e;
+      padding: 10px 12px;
+      text-align: left;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      border-bottom: 2px solid #25d366;
+      white-space: nowrap;
+    }
+    tbody td {
+      padding: 8px 12px;
+      border-bottom: 1px solid #222;
+      white-space: nowrap;
+      max-width: 200px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    tbody tr:hover { background: #1a2e1f; }
+    .row-count { color: #888; font-size: 0.85rem; margin-top: 8px; }
+
+    /* Column mapping */
+    .mapping-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .mapping-item label {
+      display: block;
+      font-size: 0.85rem;
+      color: #aaa;
+      margin-bottom: 6px;
+    }
+    .mapping-item label .req { color: #e74c3c; }
+    .mapping-item select {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid #333;
+      background: #1a1a1a;
+      color: #e0e0e0;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    .mapping-item select:focus {
+      outline: none;
+      border-color: #25d366;
+    }
+
+    /* Prefix input */
+    .prefix-hint-below { font-size: 0.75rem; color: #666; margin-top: 4px; }
+    .prefix-manual-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }
+    .prefix-manual-row label { font-size: 0.85rem; color: #aaa; white-space: nowrap; }
+    .prefix-manual-row input {
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid #333;
+      background: #1a1a1a;
+      color: #e0e0e0;
+      font-size: 0.9rem;
+      width: 100px;
+    }
+    .prefix-manual-row input:focus { outline: none; border-color: #25d366; }
+    .prefix-manual-row .prefix-hint { font-size: 0.8rem; color: #666; }
+
+    /* Buttons */
+    .btn {
+      padding: 12px 32px;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-primary {
+      background: #25d366;
+      color: #000;
+    }
+    .btn-primary:hover { background: #1eba56; }
+    .btn-primary:disabled { background: #333; color: #666; cursor: not-allowed; }
+    .btn-secondary {
+      background: #2a2a2a;
+      color: #e0e0e0;
+    }
+    .btn-secondary:hover { background: #333; }
+    .actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 16px; }
+
+    /* Preview output */
+    .preview-output thead th { border-bottom-color: #e67e22; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Excel → WASender+</h1>
+    <p class="subtitle">Subi tu Excel, mapeá las columnas y descargá listo para WASender+</p>
+
+    <!-- Upload -->
+    <div class="upload-area" id="uploadArea">
+      <svg width="48" height="48" fill="none" stroke="#25d366" stroke-width="1.5" viewBox="0 0 24 24">
+        <path d="M12 16V4m0 0L8 8m4-4l4 4M4 17v2a1 1 0 001 1h14a1 1 0 001-1v-2"/>
+      </svg>
+      <p>Arrastrá tu archivo Excel acá o <strong>hacé click</strong> para seleccionar</p>
+      <div class="filename" id="fileName"></div>
+    </div>
+    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
+
+    <!-- Step 1: Preview data -->
+    <div class="step" id="step1">
+      <div class="step-title">1. Vista previa de los datos</div>
+      <div class="table-wrap" id="previewTableWrap"></div>
+      <div class="row-count" id="rowCount"></div>
+
+      <!-- Step 2: Column mapping -->
+      <div style="margin-top: 32px;">
+        <div class="step-title">2. Asigná las columnas</div>
+
+        <div class="mapping-grid">
+          <div class="mapping-item">
+            <label>WhatsApp Number <span class="req">*</span></label>
+            <select id="mapNumber"><option value="">-- Seleccionar --</option></select>
+          </div>
+          <div class="mapping-item">
+            <label>Prefijo / Cód. Área</label>
+            <select id="mapPrefix"><option value="">-- No usar --</option></select>
+            <div class="prefix-hint-below">Columna con prefijo/cód. área por fila</div>
+          </div>
+          <div class="mapping-item">
+            <label>First Name</label>
+            <select id="mapFirstName"><option value="">-- No usar --</option></select>
+          </div>
+          <div class="mapping-item">
+            <label>Last Name</label>
+            <select id="mapLastName"><option value="">-- No usar --</option></select>
+          </div>
+          <div class="mapping-item">
+            <label>Other 1</label>
+            <select id="mapOther1"><option value="">-- No usar --</option></select>
+          </div>
+          <div class="mapping-item">
+            <label>Other 2</label>
+            <select id="mapOther2"><option value="">-- No usar --</option></select>
+          </div>
+        </div>
+
+        <div class="prefix-manual-row" id="prefixManualRow">
+          <label for="prefixInput">Prefijo manual (código país):</label>
+          <input type="text" id="prefixInput" placeholder="+54" value="+54">
+          <span class="prefix-hint">Se agrega si el número no tiene +. Dejá vacío para no agregar.</span>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-secondary" id="btnReset">Cargar otro archivo</button>
+        <button class="btn btn-primary" id="btnDownload" disabled>Descargar para WASender+</button>
+      </div>
+    </div>
+
+    <!-- Step 3: Result preview -->
+    <div class="step" id="step3">
+      <div class="step-title">3. Vista previa del archivo generado</div>
+      <div class="table-wrap preview-output" id="outputTableWrap"></div>
+      <div class="row-count" id="outputRowCount"></div>
+    </div>
+  </div>
+
+  <script>
+    let rawData = [];
+    let headers = [];
+
+    // --- Upload handling ---
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('fileInput');
+    const fileName = document.getElementById('fileName');
+
+    uploadArea.addEventListener('click', () => fileInput.click());
+    uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+    uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+    uploadArea.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadArea.classList.remove('dragover');
+      if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length) handleFile(fileInput.files[0]);
+    });
+
+    function handleFile(file) {
+      fileName.textContent = file.name;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const data = new Uint8Array(e.target.result);
+        const wb = XLSX.read(data, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+        if (json.length < 2) {
+          alert('El archivo no tiene datos suficientes.');
+          return;
+        }
+
+        headers = json[0].map(String);
+        rawData = json.slice(1);
+        renderPreview();
+        populateSelects();
+        document.getElementById('step1').classList.add('active');
+        document.getElementById('step3').classList.remove('active');
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    // --- Preview table ---
+    function renderPreview() {
+      const maxRows = 100;
+      const shown = rawData.slice(0, maxRows);
+      let html = '<table><thead><tr>';
+      headers.forEach((h, i) => { html += '<th>' + esc(h) + '</th>'; });
+      html += '</tr></thead><tbody>';
+      shown.forEach(row => {
+        html += '<tr>';
+        headers.forEach((_, i) => { html += '<td>' + esc(String(row[i] ?? '')) + '</td>'; });
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+      document.getElementById('previewTableWrap').innerHTML = html;
+      document.getElementById('rowCount').textContent =
+        rawData.length + ' filas totales' + (rawData.length > maxRows ? ' (mostrando primeras ' + maxRows + ')' : '');
+    }
+
+    // --- Populate selects ---
+    function populateSelects() {
+      const selects = ['mapNumber', 'mapPrefix', 'mapFirstName', 'mapLastName', 'mapOther1', 'mapOther2'];
+      selects.forEach(id => {
+        const sel = document.getElementById(id);
+        const isRequired = id === 'mapNumber';
+        sel.innerHTML = isRequired
+          ? '<option value="">-- Seleccionar --</option>'
+          : '<option value="">-- No usar --</option>';
+        headers.forEach((h, i) => {
+          const opt = document.createElement('option');
+          opt.value = i;
+          opt.textContent = h;
+          sel.appendChild(opt);
+        });
+      });
+      togglePrefixManual();
+      updateDownloadBtn();
+    }
+
+    // --- Toggle prefix manual row ---
+    function togglePrefixManual() {
+      const prefixCol = document.getElementById('mapPrefix').value;
+      document.getElementById('prefixManualRow').style.display = prefixCol ? 'none' : 'flex';
+    }
+
+    // --- Enable/disable download ---
+    const selects = ['mapNumber', 'mapPrefix', 'mapFirstName', 'mapLastName', 'mapOther1', 'mapOther2'];
+    selects.forEach(id => {
+      document.getElementById(id).addEventListener('change', updateDownloadBtn);
+    });
+    document.getElementById('mapPrefix').addEventListener('change', togglePrefixManual);
+
+    function updateDownloadBtn() {
+      document.getElementById('btnDownload').disabled = document.getElementById('mapNumber').value === '';
+    }
+
+    // --- Reset ---
+    document.getElementById('btnReset').addEventListener('click', () => {
+      rawData = [];
+      headers = [];
+      fileInput.value = '';
+      fileName.textContent = '';
+      document.getElementById('step1').classList.remove('active');
+      document.getElementById('step3').classList.remove('active');
+    });
+
+    // --- Download ---
+    document.getElementById('btnDownload').addEventListener('click', generateAndDownload);
+
+    function generateAndDownload() {
+      const numIdx = parseInt(document.getElementById('mapNumber').value);
+      const prefixColIdx = document.getElementById('mapPrefix').value;
+      const fnIdx = document.getElementById('mapFirstName').value;
+      const lnIdx = document.getElementById('mapLastName').value;
+      const o1Idx = document.getElementById('mapOther1').value;
+      const o2Idx = document.getElementById('mapOther2').value;
+      const manualPrefix = document.getElementById('prefixInput').value.trim();
+
+      // Build WAMessenger template format
+      const tipText = "Tips\n\n1.WhatsApp Number is required. Please fill it in the following format:\n" +
+        "Country code in front, like： +12244887785,+923152748071\n\n" +
+        "2.Please note that:\n" +
+        "[Required] The first column must be the WhatsApp Number.\n" +
+        "[Required] Each column header must occupy row 3, which means the real data starts on row 4.\n" +
+        "[Not required] Other columns can be customized within Excel.\n" +
+        "[Not required] The data in row 4 is an example and is suggested for deletion.\n" +
+        "[Not required] Please do not delete this tips information unless necessary.";
+
+      const wsData = [];
+      // Row 1: Tips
+      wsData.push([tipText]);
+      // Row 2: Empty
+      wsData.push([]);
+      // Row 3: Headers
+      wsData.push(["WhatsApp Number(with country code)", "FirstName", "LastName", "Other1", "Other2"]);
+
+      // Row 4+: Data
+      let skipped = 0;
+      rawData.forEach(row => {
+        let phone = String(row[numIdx] ?? '').trim();
+        if (!phone) { skipped++; return; }
+
+        // Clean phone: remove spaces, dashes, dots
+        phone = phone.replace(/[\s\-\.()]/g, '');
+
+        // Determine prefix: from column or manual
+        let prefix = '';
+        if (prefixColIdx !== '') {
+          prefix = String(row[parseInt(prefixColIdx)] ?? '').trim().replace(/[\s\-\.()]/g, '');
+          if (prefix && !prefix.startsWith('+')) prefix = '+' + prefix;
+        } else {
+          prefix = manualPrefix;
+        }
+
+        // Add prefix if phone doesn't start with +
+        if (prefix && !phone.startsWith('+')) {
+          phone = prefix + phone;
+        }
+
+        const firstName = fnIdx !== '' ? String(row[parseInt(fnIdx)] ?? '') : '';
+        const lastName = lnIdx !== '' ? String(row[parseInt(lnIdx)] ?? '') : '';
+        const other1 = o1Idx !== '' ? String(row[parseInt(o1Idx)] ?? '') : '';
+        const other2 = o2Idx !== '' ? String(row[parseInt(o2Idx)] ?? '') : '';
+
+        wsData.push([phone, firstName, lastName, other1, other2]);
+      });
+
+      // Create workbook
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+      // Merge A1 across columns for tips row
+      ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 4 } }];
+
+      // Set column widths
+      ws['!cols'] = [
+        { wch: 30 }, // Number
+        { wch: 18 }, // FirstName
+        { wch: 18 }, // LastName
+        { wch: 18 }, // Other1
+        { wch: 18 }, // Other2
+      ];
+
+      XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+      XLSX.writeFile(wb, 'WAMessenger_Output.xlsx');
+
+      // Show output preview
+      renderOutputPreview(wsData, skipped);
+    }
+
+    function renderOutputPreview(wsData, skipped) {
+      const dataRows = wsData.slice(3);
+      const showRows = dataRows.slice(0, 50);
+      const outHeaders = wsData[2];
+      let html = '<table><thead><tr>';
+      outHeaders.forEach(h => { html += '<th>' + esc(h) + '</th>'; });
+      html += '</tr></thead><tbody>';
+      showRows.forEach(row => {
+        html += '<tr>';
+        for (let i = 0; i < 5; i++) { html += '<td>' + esc(String(row[i] ?? '')) + '</td>'; }
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+      document.getElementById('outputTableWrap').innerHTML = html;
+      document.getElementById('outputRowCount').textContent =
+        dataRows.length + ' contactos exportados' +
+        (skipped ? ' (' + skipped + ' filas sin número omitidas)' : '') +
+        (dataRows.length > 50 ? ' (mostrando primeros 50)' : '');
+      document.getElementById('step3').classList.add('active');
+    }
+
+    function esc(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>
