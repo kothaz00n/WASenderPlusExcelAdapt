@@ -5,7 +5,8 @@
       "Bash(npm init -y)",
       "Bash(npm install xlsx)",
       "mcp__Claude_Preview__preview_start",
-      "Bash(npm install http-server)"
+      "Bash(npm install http-server)",
+      "Bash(curl -sL \"https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js\" -o xlsx.full.min.js)"
     ]
   }
 }

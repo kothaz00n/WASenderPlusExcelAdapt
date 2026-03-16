@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WA Sender</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="app">
+    <!-- Header -->
+    <div class="header">
+      <h1>WA Sender</h1>
+      <span class="status-dot" id="statusDot" title="Desconectado"></span>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab active" data-tab="tabExcel">Excel</button>
+      <button class="tab" data-tab="tabTemplates">Plantillas</button>
+      <button class="tab" data-tab="tabConfig">Config</button>
+      <button class="tab" data-tab="tabSend">Enviar</button>
+    </div>
+
+    <!-- Tab 1: Excel -->
+    <div class="tab-content active" id="tabExcel">
+      <div class="upload-area" id="uploadArea">
+        <svg width="32" height="32" fill="none" stroke="#25d366" stroke-width="1.5" viewBox="0 0 24 24">
+          <path d="M12 16V4m0 0L8 8m4-4l4 4M4 17v2a1 1 0 001 1h14a1 1 0 001-1v-2"/>
+        </svg>
+        <p>Arrastrá tu Excel o <strong>hacé click</strong></p>
+        <div class="filename" id="fileName"></div>
+      </div>
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display:none">
+
+      <div id="mappingSection" style="display:none">
+        <div class="section-title">Mapeo de columnas</div>
+        <div class="mapping-grid">
+          <div class="field">
+            <label>Número <span class="req">*</span></label>
+            <select id="mapNumber"><option value="">-- Seleccionar --</option></select>
+          </div>
+          <div class="field">
+            <label>Prefijo / Cód. Área</label>
+            <select id="mapPrefix"><option value="">-- No usar --</option></select>
+          </div>
+          <div class="field">
+            <label>First Name</label>
+            <select id="mapFirstName"><option value="">-- No usar --</option></select>
+          </div>
+          <div class="field">
+            <label>Last Name</label>
+            <select id="mapLastName"><option value="">-- No usar --</option></select>
+          </div>
+          <div class="field">
+            <label>Other 1</label>
+            <select id="mapOther1"><option value="">-- No usar --</option></select>
+          </div>
+          <div class="field">
+            <label>Other 2</label>
+            <select id="mapOther2"><option value="">-- No usar --</option></select>
+          </div>
+        </div>
+
+        <div class="prefix-manual" id="prefixManualRow">
+          <label>Prefijo manual:</label>
+          <input type="text" id="prefixInput" placeholder="+54" value="+54">
+          <span class="hint">Se agrega si no tiene +</span>
+        </div>
+
+        <div class="table-wrap" id="previewTable"></div>
+        <div class="row-info" id="rowInfo"></div>
+
+        <button class="btn btn-primary" id="btnSaveContacts" disabled>Guardar contactos</button>
+      </div>
+
+      <div class="contacts-saved" id="contactsSaved" style="display:none">
+        <span class="check-icon">&#10003;</span>
+        <span id="savedCount">0</span> contactos guardados
+        <button class="btn-link" id="btnClearContacts">Borrar y cargar otro</button>
+      </div>
+    </div>
+
+    <!-- Tab 2: Templates -->
+    <div class="tab-content" id="tabTemplates">
+      <div class="section-title">Plantillas de mensaje (rotan secuencialmente)</div>
+      <div class="templates-list">
+        <div class="template-item">
+          <label>Plantilla 1 <span class="req">*</span></label>
+          <textarea class="template-input" id="tpl1" placeholder="Escribí el mensaje de la plantilla 1..." rows="3"></textarea>
+        </div>
+        <div class="template-item">
+          <label>Plantilla 2</label>
+          <textarea class="template-input" id="tpl2" placeholder="Opcional..." rows="3"></textarea>
+        </div>
+        <div class="template-item">
+          <label>Plantilla 3</label>
+          <textarea class="template-input" id="tpl3" placeholder="Opcional..." rows="3"></textarea>
+        </div>
+        <div class="template-item">
+          <label>Plantilla 4</label>
+          <textarea class="template-input" id="tpl4" placeholder="Opcional..." rows="3"></textarea>
+        </div>
+        <div class="template-item">
+          <label>Plantilla 5</label>
+          <textarea class="template-input" id="tpl5" placeholder="Opcional..." rows="3"></textarea>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btnSaveTemplates">Guardar plantillas</button>
+    </div>
+
+    <!-- Tab 3: Config -->
+    <div class="tab-content" id="tabConfig">
+      <div class="section-title">Intervalo entre mensajes</div>
+      <div class="config-row">
+        <div class="field">
+          <label>Mínimo (segundos)</label>
+          <input type="number" id="cfgMinInterval" value="30" min="5" max="300">
+        </div>
+        <div class="field">
+          <label>Máximo (segundos)</label>
+          <input type="number" id="cfgMaxInterval" value="60" min="10" max="600">
+        </div>
+      </div>
+      <div class="hint" style="margin-bottom:16px">Tiempo random entre ambos valores por cada mensaje</div>
+
+      <div class="section-title">Descanso periódico</div>
+      <div class="config-row">
+        <div class="field">
+          <label>Cada N mensajes</label>
+          <input type="number" id="cfgRestEvery" value="20" min="1" max="500">
+        </div>
+        <div class="field">
+          <label>Descansar (minutos)</label>
+          <input type="number" id="cfgRestMinutes" value="5" min="1" max="60">
+        </div>
+      </div>
+      <div class="hint" style="margin-bottom:16px">Se pausa automáticamente para evitar bloqueos</div>
+
+      <button class="btn btn-primary" id="btnSaveConfig">Guardar configuración</button>
+    </div>
+
+    <!-- Tab 4: Send -->
+    <div class="tab-content" id="tabSend">
+      <div class="send-summary" id="sendSummary">
+        <div class="summary-item">
+          <span class="summary-label">Contactos:</span>
+          <span class="summary-value" id="sumContacts">0</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Plantillas:</span>
+          <span class="summary-value" id="sumTemplates">0</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Intervalo:</span>
+          <span class="summary-value" id="sumInterval">30-60s</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Descanso:</span>
+          <span class="summary-value" id="sumRest">cada 20, 5min</span>
+        </div>
+      </div>
+
+      <div class="send-controls">
+        <button class="btn btn-start" id="btnStart" disabled>Iniciar envío</button>
+        <button class="btn btn-pause" id="btnPause" style="display:none">Pausar</button>
+        <button class="btn btn-stop" id="btnStop" style="display:none">Detener</button>
+      </div>
+
+      <div class="progress-section" id="progressSection" style="display:none">
+        <div class="progress-bar">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <div class="progress-text" id="progressText">0 / 0 (0%)</div>
+      </div>
+
+      <div class="log-section">
+        <div class="section-title">Log de envío</div>
+        <div class="log-list" id="logList">
+          <div class="log-empty">Sin actividad aún</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../libs/xlsx.full.min.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
