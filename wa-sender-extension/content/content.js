@@ -1,8 +1,8 @@
 // ===== WA Sender - Content Script for WhatsApp Web =====
-// Strategy: state-driven via chrome.storage.local
-// Each page load checks if there's an active sending session.
-// After sending a message, waits the interval, then navigates to the next contact.
-// Navigation reloads the script, which picks up from storage and continues.
+// Strategy: use a pendingSend flag in storage.
+// Before navigating to /send?phone=X, we set pendingSend=true.
+// WhatsApp Web processes the URL and redirects to the chat (URL changes).
+// On every load, if pendingSend is true, we wait for the input and click send.
 
 console.log('[WA Sender] Content script loaded');
 
@@ -11,27 +11,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'start' || msg.type === 'resume') {
     navigateToCurrentContact();
   }
-  // pause/stop are handled via storage state (updated by background.js)
   sendResponse({ ok: true });
   return true;
 });
 
-// On every page load, check if we need to send
+// On every page load, check if there's a pending send
 (async function init() {
-  // Give the page time to settle
   await sleep(3000);
 
   const { sendState } = await chrome.storage.local.get('sendState');
-  if (!sendState || sendState.status !== 'running') return;
+  if (!sendState || sendState.status !== 'running' || !sendState.pendingSend) return;
 
-  // We're on a /send?phone= URL — the message is pre-filled, we need to click send
-  if (window.location.href.includes('/send?phone=')) {
-    await handleSendPage();
-  }
+  await handlePendingSend();
 })();
 
-// ===== Core: handle the current send page =====
-async function handleSendPage() {
+// ===== Handle a pending send (chat should be open with pre-filled message) =====
+async function handlePendingSend() {
   const { sendState, contacts, templates, config } = await chrome.storage.local.get([
     'sendState', 'contacts', 'templates', 'config'
   ]);
@@ -44,7 +39,11 @@ async function handleSendPage() {
   const contact = contacts[current];
   const templateIdx = current % templates.length;
 
-  // Wait for the message input (text is pre-filled by the URL)
+  // Clear the pending flag
+  sendState.pendingSend = false;
+  await chrome.storage.local.set({ sendState });
+
+  // Wait for the message input to appear (text was pre-filled by the /send URL)
   const inputBox = await waitForElement(
     'div[contenteditable="true"][data-tab="10"]',
     30000
@@ -57,29 +56,29 @@ async function handleSendPage() {
       const okBtn = errorPopup.querySelector('button');
       if (okBtn) okBtn.click();
     }
-    await logEntry('error', ts() + ' \u2717 ' + maskPhone(contact.phone) + ' - Numero invalido o chat no cargo');
-    await advanceAndContinue(sendState, contacts, templates, cfg);
+    await logEntry('error', ts() + ' X ' + maskPhone(contact.phone) + ' - Numero invalido o chat no cargo');
+    await advanceAndContinue(cfg, contacts, templates);
     return;
   }
 
-  // Wait a bit for everything to be ready
+  // Wait for everything to settle
   await sleep(2000);
 
-  // Click the send button
+  // Click send
   const sent = await clickSend();
 
   if (sent) {
-    await logEntry('success', ts() + ' \u2713 ' + maskPhone(contact.phone) + ' - Enviado (plantilla ' + (templateIdx + 1) + ')');
+    await logEntry('success', ts() + ' OK ' + maskPhone(contact.phone) + ' - Enviado (plantilla ' + (templateIdx + 1) + ')');
   } else {
-    await logEntry('error', ts() + ' \u2717 ' + maskPhone(contact.phone) + ' - No se encontro boton enviar');
+    await logEntry('error', ts() + ' X ' + maskPhone(contact.phone) + ' - No se encontro boton enviar');
   }
 
-  await advanceAndContinue(sendState, contacts, templates, cfg);
+  await advanceAndContinue(cfg, contacts, templates);
 }
 
 // ===== Click the send button =====
 async function clickSend() {
-  // Try multiple selectors (WhatsApp Web changes these)
+  // Try multiple selectors (WhatsApp Web updates these)
   const selectors = [
     'span[data-icon="send"]',
     'button[data-testid="send"]',
@@ -97,15 +96,14 @@ async function clickSend() {
     }
   }
 
-  // Fallback: try pressing Enter on the input
+  // Fallback: press Enter
   const input = document.querySelector('div[contenteditable="true"][data-tab="10"]');
   if (input) {
     input.focus();
-    document.execCommand('insertText', false, '');
-    const enterEvent = new KeyboardEvent('keydown', {
+    const enter = new KeyboardEvent('keydown', {
       key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true
     });
-    input.dispatchEvent(enterEvent);
+    input.dispatchEvent(enter);
     await sleep(2000);
     return true;
   }
@@ -113,41 +111,43 @@ async function clickSend() {
   return false;
 }
 
-// ===== Advance to next contact and continue =====
-async function advanceAndContinue(sendState, contacts, templates, cfg) {
+// ===== Advance to next contact =====
+async function advanceAndContinue(cfg, contacts, templates) {
+  // Re-read state (might have changed during send)
+  const { sendState } = await chrome.storage.local.get('sendState');
+  if (!sendState) return;
+
   sendState.current += 1;
 
-  // Check if done
+  // Done?
   if (sendState.current >= contacts.length) {
     sendState.status = 'done';
     sendState.log.push({ type: 'success', text: ts() + ' Envio completado!' });
     await chrome.storage.local.set({ sendState });
-    // Navigate back to main WhatsApp page
-    window.location.href = 'https://web.whatsapp.com';
     return;
   }
 
   await chrome.storage.local.set({ sendState });
 
-  // Rest period check
+  // Rest period
   if (cfg.restEvery > 0 && sendState.current > 0 && sendState.current % cfg.restEvery === 0) {
     await logEntry('rest', ts() + ' Descansando ' + cfg.restMinutes + ' minuto(s)...');
-    const shouldContinue = await interruptableSleep(cfg.restMinutes * 60 * 1000);
-    if (!shouldContinue) return;
+    const ok = await interruptableSleep(cfg.restMinutes * 60 * 1000);
+    if (!ok) return;
     await logEntry('info', ts() + ' Reanudando envio');
   }
 
-  // Wait interval before next message
+  // Wait interval
   const waitSec = randomBetween(cfg.minInterval, cfg.maxInterval);
   await logEntry('info', ts() + ' Esperando ' + waitSec + 's...');
-  const shouldContinue = await interruptableSleep(waitSec * 1000);
-  if (!shouldContinue) return;
+  const ok = await interruptableSleep(waitSec * 1000);
+  if (!ok) return;
 
-  // Navigate to next contact (this will reload the content script)
+  // Navigate to next
   await navigateToCurrentContact();
 }
 
-// ===== Navigate to the current contact's send URL =====
+// ===== Navigate to current contact's send URL =====
 async function navigateToCurrentContact() {
   const { sendState, contacts, templates } = await chrome.storage.local.get([
     'sendState', 'contacts', 'templates'
@@ -168,7 +168,12 @@ async function navigateToCurrentContact() {
 
   await logEntry('info', ts() + ' Abriendo chat ' + maskPhone(contact.phone) + '...');
 
-  // Navigate — the script will reload and init() will pick up
+  // Set pending flag BEFORE navigating
+  sendState.pendingSend = true;
+  await chrome.storage.local.set({ sendState });
+
+  // Navigate — WA Web will process the URL and open the chat
+  // The content script reloads, init() sees pendingSend=true, handles it
   window.location.href = url;
 }
 
@@ -195,7 +200,7 @@ async function logEntry(type, text) {
   await chrome.storage.local.set({ sendState });
 }
 
-// ===== Interruptable sleep (checks storage for pause/stop) =====
+// ===== Interruptable sleep (polls storage for pause/stop) =====
 async function interruptableSleep(ms) {
   const end = Date.now() + ms;
   while (Date.now() < end) {
